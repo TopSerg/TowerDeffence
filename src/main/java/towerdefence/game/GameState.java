@@ -169,7 +169,10 @@ public class GameState {
         constructionQueue.remove(site);
         reservationsBySite.remove(site);
         allBuildings.remove(site);
-        if (tile != null && tile.getBuilding() == site) tile.setBuilding(null);
+        // Освобождаем весь footprint чертежа (например, 3x3 у Workshop),
+        // иначе оставшиеся клетки всё ещё содержат ConstructionSite и
+        // готовое здание не может занять своё место.
+        releaseBuildingTile(site);
         site.setAlive(false);
         site.setAssignedWorker(null);
 
