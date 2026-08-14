@@ -15,7 +15,7 @@ public class MainWindow extends JFrame {
         // Карта увеличена, чтобы транспорт, разведка и независимый фокус камеры имели физический смысл.
         GameMap map = new GameMap(40, 30);
         RoadmapGameState state = new RoadmapGameState(map);
-        RoadmapGamePanel panel = new RoadmapGamePanel(map, state);
+        RoadmapPresenceGamePanel panel = new RoadmapPresenceGamePanel(map, state);
 
         JScrollPane worldView = new JScrollPane(panel);
         worldView.setPreferredSize(new Dimension(900, 720));

@@ -1,24 +1,27 @@
 package towerdefence.game;
 
+import towerdefence.building.Workshop;
 import towerdefence.combat.CombatTower;
 import towerdefence.combat.TowerModuleType;
 import towerdefence.resource.ResourceType;
 import towerdefence.roadmap.RoadmapRuntime;
-import towerdefence.unit.Worker;
 import towerdefence.world.GameMap;
 import towerdefence.world.Tile;
 
 /** GameState экспериментальной реализации всего текущего roadmap. */
 public class RoadmapGameState extends WorkshopGameState {
     private final RoadmapRuntime roadmap;
+    private final RoadmapFlowController flow;
 
     public RoadmapGameState(GameMap map) {
         super(map);
         roadmap = new RoadmapRuntime(this, map);
         roadmap.bootstrap();
+        flow = new RoadmapFlowController(this, roadmap);
     }
 
     public RoadmapRuntime getRoadmap() { return roadmap; }
+    public Workshop getRequestedWorkshop() { return flow.getRequestedWorkshop(); }
 
     /** Вася больше не забирает строительные задачи у Construction Rover. */
     @Override
@@ -36,7 +39,11 @@ public class RoadmapGameState extends WorkshopGameState {
     @Override
     public void update() {
         super.update();
-        if (getStatus() == GameStatus.RUNNING) roadmap.update();
+        if (getStatus() == GameStatus.RUNNING) {
+            flow.beforeRuntimeUpdate();
+            roadmap.update();
+            flow.afterRuntimeUpdate();
+        }
     }
 
     @Override
