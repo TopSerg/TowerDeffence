@@ -15,6 +15,7 @@ public abstract class CombatTower extends Building {
     private static final float BASE_MAX_HEAT = 100.0f;
     private static final float BASE_COOLING_PER_TICK = 0.45f;
     private static final int OVERHEAT_LOCK_TICKS = 75;
+    private static final int COOLANT_USE_INTERVAL = 120;
 
     private final int maxAmmo;
     private final int damage;
@@ -32,6 +33,8 @@ public abstract class CombatTower extends Building {
     private float heat;
     private boolean overheated;
     private int overheatLockTicks;
+    private int coolant;
+    private int coolantUseTicks;
 
     protected CombatTower(int health, Tile position, Color color, BuildingType type,
                           int maxAmmo, int damage, double attackRange, int fireCooldownTicks) {
@@ -50,6 +53,14 @@ public abstract class CombatTower extends Building {
         return accepted;
     }
 
+    public int addCoolant(int amount) {
+        if (amount <= 0) return 0;
+        int accepted = Math.min(amount, 24 - coolant);
+        coolant += accepted;
+        return accepted;
+    }
+
+    public int getCoolant() { return coolant; }
     public int getAmmo() { return ammo; }
     public int getMaxAmmo() { return maxAmmo; }
     public int getDamage() { return damage; }
@@ -61,21 +72,26 @@ public abstract class CombatTower extends Building {
     public void setSupplied(boolean supplied) { this.supplied = supplied; }
     public Enemy getCurrentTarget() { return currentTarget; }
     public float getHeat() { return heat; }
+
     public float getMaxHeat() {
         float result = BASE_MAX_HEAT;
         for (TowerModuleType module : installedModules) result += module.getMaxHeatBonus();
         return result;
     }
+
     public float getCoolingPerTick() {
         float result = BASE_COOLING_PER_TICK;
         for (TowerModuleType module : installedModules) result += module.getCoolingBonus();
+        if (coolant > 0 && installedModules.contains(TowerModuleType.COOLING_I)) result += 1.40f;
         return result;
     }
+
     public float getHeatPerShot() {
         float result = 0.0f;
         for (TowerModuleType module : installedModules) result += module.getHeatPerShot();
         return result;
     }
+
     public boolean isOverheated() { return overheated; }
     public int getOverheatLockTicks() { return overheatLockTicks; }
     public Set<TowerModuleType> getInstalledModules() {
@@ -119,11 +135,7 @@ public abstract class CombatTower extends Building {
 
     public void updateCombat(List<Enemy> enemies) {
         if (!isAlive) return;
-
-        if (!isTargetInRange(currentTarget) || shouldRetarget(currentTarget, enemies)) {
-            currentTarget = findTarget(enemies);
-        }
-
+        if (!isTargetInRange(currentTarget) || shouldRetarget(currentTarget, enemies)) currentTarget = findTarget(enemies);
         if (currentTarget == null || ammo <= 0 || fireCooldown > 0 || overheated) return;
 
         ammo--;
@@ -141,19 +153,15 @@ public abstract class CombatTower extends Building {
                 overheatLockTicks = OVERHEAT_LOCK_TICKS;
             }
         }
-
         if (!currentTarget.isAlive()) currentTarget = null;
     }
 
-    protected boolean shouldRetarget(Enemy current, List<Enemy> enemies) {
-        return false;
-    }
+    protected boolean shouldRetarget(Enemy current, List<Enemy> enemies) { return false; }
 
     protected Enemy findTarget(List<Enemy> enemies) {
         Enemy nearest = null;
         double nearestDistanceSquared = Double.MAX_VALUE;
         if (enemies == null) return null;
-
         for (Enemy enemy : enemies) {
             if (!isTargetInRange(enemy)) continue;
             double distanceSquared = distanceSquared(enemy);
@@ -171,22 +179,17 @@ public abstract class CombatTower extends Building {
         return dx * dx + dy * dy;
     }
 
-    protected void hitTarget(Enemy target) {
-        target.takeDamage(damage);
-    }
-
+    protected void hitTarget(Enemy target) { target.takeDamage(damage); }
     protected int getShotEffectDurationTicks() { return 4; }
     protected Color getShotColor() { return new Color(255, 228, 105, 220); }
     protected float getShotWidth() { return 2.5f; }
 
     public void renderShotEffect(Graphics g, int tileSize) {
         if (shotEffectTicks <= 0 || position == null) return;
-
         int startX = position.getX() * tileSize + tileSize / 2;
         int startY = position.getY() * tileSize + tileSize / 2;
         int endX = Math.round((shotTargetX + 0.5f) * tileSize);
         int endY = Math.round((shotTargetY + 0.5f) * tileSize);
-
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setColor(getShotColor());
         g2.setStroke(new BasicStroke(getShotWidth(), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
@@ -198,14 +201,12 @@ public abstract class CombatTower extends Building {
 
     protected double getAimAngle() {
         if (currentTarget == null || !currentTarget.isAlive()) return -Math.PI / 2.0;
-        return Math.atan2(currentTarget.getRealY() - position.getY(),
-                currentTarget.getRealX() - position.getX());
+        return Math.atan2(currentTarget.getRealY() - position.getY(), currentTarget.getRealX() - position.getX());
     }
 
     protected void renderSupplyAndAmmo(Graphics g, int x, int y, int tileSize) {
         g.setColor(supplied ? new Color(76, 220, 120) : new Color(230, 80, 70));
         g.fillOval(x + tileSize - 9, y + 3, 6, 6);
-
         g.setColor(Color.WHITE);
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, Math.max(9, tileSize / 4)));
         String ammoText = Integer.toString(ammo);
@@ -227,11 +228,13 @@ public abstract class CombatTower extends Building {
             int moduleY = y + 7;
             for (TowerModuleType module : TowerModuleType.values()) {
                 if (!installedModules.contains(module)) continue;
-                g.setColor(module == TowerModuleType.COOLING_I
-                        ? new Color(80, 210, 235)
-                        : new Color(245, 210, 75));
+                g.setColor(module == TowerModuleType.COOLING_I ? new Color(80, 210, 235) : new Color(245, 210, 75));
                 g.fillRect(moduleX, moduleY, 4, 4);
                 moduleX += 5;
+            }
+            if (coolant > 0) {
+                g.setColor(new Color(80, 220, 225));
+                g.drawString("C" + coolant, x + 2, y + tileSize - 12);
             }
         }
     }
@@ -242,10 +245,19 @@ public abstract class CombatTower extends Building {
         if (shotEffectTicks > 0) shotEffectTicks--;
         if (currentTarget != null && !currentTarget.isAlive()) currentTarget = null;
 
+        boolean usingCoolant = heat > 0.0f && coolant > 0 && installedModules.contains(TowerModuleType.COOLING_I);
         if (heat > 0.0f) heat = Math.max(0.0f, heat - getCoolingPerTick());
-        if (overheatLockTicks > 0) overheatLockTicks--;
-        if (overheated && overheatLockTicks <= 0 && heat <= getMaxHeat() * 0.35f) {
-            overheated = false;
+        if (usingCoolant) {
+            coolantUseTicks++;
+            if (coolantUseTicks >= COOLANT_USE_INTERVAL) {
+                coolantUseTicks = 0;
+                coolant--;
+            }
+        } else {
+            coolantUseTicks = 0;
         }
+
+        if (overheatLockTicks > 0) overheatLockTicks--;
+        if (overheated && overheatLockTicks <= 0 && heat <= getMaxHeat() * 0.35f) overheated = false;
     }
 }

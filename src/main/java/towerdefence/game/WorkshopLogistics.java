@@ -17,9 +17,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Минимальный мост внешней и внутренней логистики Workshop.
- * Один внешний порт пропускает максимум один предмет за логистический такт;
- * три внутренние линии делят эту пропускную способность, а не умножают её.
+ * Мост внешней и внутренней логистики Workshop.
+ * Один внешний порт пропускает максимум один физический предмет за логистический такт.
  */
 public final class WorkshopLogistics {
     private WorkshopLogistics() { }
@@ -28,19 +27,15 @@ public final class WorkshopLogistics {
         if (buildings == null || map == null || mainBuilding == null || !mainBuilding.isAlive()) return;
 
         for (Building building : buildings) {
-            if (building instanceof FactoryPort && building.isAlive()) {
-                ((FactoryPort) building).beginLogisticsTick();
-            }
+            if (building instanceof FactoryPort && building.isAlive()) ((FactoryPort) building).beginLogisticsTick();
         }
 
-        // Сначала двигаем уже находящиеся внутри предметы.
         for (Building building : new ArrayList<>(buildings)) {
-            if (building instanceof Workshop && building.isAlive()) {
+            if (building instanceof Workshop && ((Workshop) building).isOperational()) {
                 ((Workshop) building).advanceInteriorTransport();
             }
         }
 
-        // Затем пытаемся выгрузить готовые предметы наружу.
         for (Building building : new ArrayList<>(buildings)) {
             if (building instanceof FactoryPort && building.isAlive()) {
                 FactoryPort port = (FactoryPort) building;
@@ -48,12 +43,8 @@ public final class WorkshopLogistics {
             }
         }
 
-        // И только после этого принимаем новую единицу с внешнего входа.
-        // Она появится на Gateway сейчас, но начнёт двигаться по линии со следующего такта.
         for (Building building : new ArrayList<>(buildings)) {
-            if (building instanceof Drill && building.isAlive()) {
-                feedWorkshopFromDrill((Drill) building, map);
-            }
+            if (building instanceof Drill && building.isAlive()) feedWorkshopFromDrill((Drill) building, map);
         }
     }
 
@@ -79,13 +70,11 @@ public final class WorkshopLogistics {
             if (!endpoint.isAlive()) return false;
             if (endpoint instanceof FactoryPort) {
                 FactoryPort port = (FactoryPort) endpoint;
-                if (!port.isInput() || port.getWorkshop() == null || !port.getWorkshop().isAlive()) return false;
+                if (!port.isInput() || port.getWorkshop() == null || !port.getWorkshop().isOperational()) return false;
                 drill.setOutputConnected(true);
                 port.setExternalConnected(true);
                 for (Conveyor conveyor : path) conveyor.setActive(true);
-                if (drill.getBuffer() > 0 && port.acceptExternalResource(drill.getResourceType())) {
-                    drill.takeFromBuffer(1);
-                }
+                if (drill.getBuffer() > 0 && port.acceptExternalResource(drill.getResourceType())) drill.takeFromBuffer(1);
                 return true;
             }
             if (!(endpoint instanceof Conveyor)) return false;
@@ -95,8 +84,8 @@ public final class WorkshopLogistics {
     }
 
     private static void drainOutputPort(FactoryPort port, GameMap map, House mainBuilding) {
-        if (port.getWorkshop() == null || !port.getWorkshop().isAlive() || port.getPosition() == null) return;
-        for (Tile neighbor : orthogonalNeighbors(map, port.getPosition()) {
+        if (port.getWorkshop() == null || !port.getWorkshop().isOperational() || port.getPosition() == null) return;
+        for (Tile neighbor : orthogonalNeighbors(map, port.getPosition())) {
             if (neighbor == null || !(neighbor.getBuilding() instanceof Conveyor)) continue;
             Conveyor first = (Conveyor) neighbor.getBuilding();
             if (first.getOutputTile(map) == port.getPosition()) continue;
@@ -105,7 +94,7 @@ public final class WorkshopLogistics {
     }
 
     private static boolean traceOutputPortToStorage(FactoryPort port, Conveyor first,
-                                                        GameMap map, House mainBuilding) {
+                                                     GameMap map, House mainBuilding) {
         List<Conveyor> path = new ArrayList<>();
         Set<Conveyor> visited = new HashSet<>();
         Conveyor current = first;
@@ -119,9 +108,19 @@ public final class WorkshopLogistics {
                 port.setExternalConnected(true);
                 for (Conveyor conveyor : path) conveyor.setActive(true);
                 ResourceType type = port.peekOutputResource();
-                if (type != null && mainBuilding.getInventory().addUpToCapacity(type, 1) == 1) {
-                    port.commitOutputToExternal();
+                if (type == null) return true;
+
+                boolean accepted;
+                if (type == ResourceType.AMMO) {
+                    mainBuilding.addAmmo(1);
+                    accepted = true;
+                } else if (type.isLiquid()) {
+                    // Жидкости должны идти по pipe-layer, а не попадать в обычный склад.
+                    accepted = false;
+                } else {
+                    accepted = mainBuilding.getInventory().addUpToCapacity(type, 1) == 1;
                 }
+                if (accepted) port.commitOutputToExternal();
                 return true;
             }
             if (!(endpoint instanceof Conveyor)) return false;

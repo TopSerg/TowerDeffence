@@ -13,9 +13,15 @@ import java.util.List;
 /** Пристройка 1x1 к Workshop. Создаёт внутренний gateway на соответствующей стороне. */
 public class FactoryPort extends Building {
     public static final int BUFFER_CAPACITY = 12;
+    private static final ResourceType[] FILTER_CYCLE = {
+            null, ResourceType.METAL, ResourceType.COAL, ResourceType.SCRAP,
+            ResourceType.OIL, ResourceType.PLATE, ResourceType.COMPONENT,
+            ResourceType.AMMO, ResourceType.ROBOT_KIT
+    };
 
     private final boolean input;
     private final Deque<ResourceType> gatewayBuffer = new ArrayDeque<>();
+    private final ResourceType[] laneFilters = new ResourceType[Workshop.INTERIOR_SCALE];
     private Direction attachedSide;
     private Workshop workshop;
     private boolean externalTransferUsed;
@@ -45,7 +51,34 @@ public class FactoryPort extends Building {
     }
 
     public List<Point> getGatewayCells() {
-        return workshop == null ? Collections.emptyList() : workshop.getGatewayCells(this);
+        return workshop == null ? Collections.<Point>emptyList() : workshop.getGatewayCells(this);
+    }
+
+    public ResourceType getLaneFilter(int lane) {
+        return lane >= 0 && lane < laneFilters.length ? laneFilters[lane] : null;
+    }
+
+    /** null = ANY. */
+    public void setLaneFilter(int lane, ResourceType filter) {
+        if (lane >= 0 && lane < laneFilters.length) laneFilters[lane] = filter;
+    }
+
+    public boolean acceptsLane(int lane, ResourceType type) {
+        if (lane < 0 || lane >= laneFilters.length || type == null) return false;
+        ResourceType filter = laneFilters[lane];
+        return filter == null || filter == type;
+    }
+
+    /** Переключает ANY → Metal → Coal → Scrap → Oil → Plate → Component → Ammo → Robot → ANY. */
+    public ResourceType cycleLaneFilter(int lane) {
+        if (lane < 0 || lane >= laneFilters.length) return null;
+        ResourceType current = laneFilters[lane];
+        int index = 0;
+        for (int i = 0; i < FILTER_CYCLE.length; i++) {
+            if (FILTER_CYCLE[i] == current) { index = i; break; }
+        }
+        laneFilters[lane] = FILTER_CYCLE[(index + 1) % FILTER_CYCLE.length];
+        return laneFilters[lane];
     }
 
     /** Сбрасывает ограничение одной внешней передачи на новый логистический такт. */
@@ -59,23 +92,19 @@ public class FactoryPort extends Building {
     /** Внешний conveyor может положить во входной Gateway максимум один предмет за такт. */
     public boolean acceptExternalResource(ResourceType type) {
         if (!input || type == null || externalTransferUsed || gatewayBuffer.size() >= BUFFER_CAPACITY
-                || workshop == null || !workshop.isAlive()) return false;
+                || workshop == null || !workshop.isOperational()) return false;
         gatewayBuffer.addLast(type);
         externalTransferUsed = true;
         return true;
     }
 
-    public ResourceType peekInputResource() {
-        return input ? gatewayBuffer.peekFirst() : null;
-    }
-
-    public ResourceType commitInputToInterior() {
-        return input ? gatewayBuffer.pollFirst() : null;
-    }
+    public ResourceType peekInputResource() { return input ? gatewayBuffer.peekFirst() : null; }
+    public ResourceType commitInputToInterior() { return input ? gatewayBuffer.pollFirst() : null; }
 
     /** Внутренняя линия складывает готовый к выходу предмет в буфер OUTPUT Gateway. */
     public boolean offerInteriorOutput(ResourceType type) {
-        if (input || type == null || gatewayBuffer.size() >= BUFFER_CAPACITY) return false;
+        if (input || type == null || gatewayBuffer.size() >= BUFFER_CAPACITY
+                || workshop == null || !workshop.isOperational()) return false;
         gatewayBuffer.addLast(type);
         return true;
     }
@@ -91,7 +120,6 @@ public class FactoryPort extends Building {
     }
 
     public int getGatewayCursor() { return gatewayCursor; }
-
     public void setGatewayCursor(int gatewayCursor) {
         this.gatewayCursor = Math.floorMod(gatewayCursor, Workshop.INTERIOR_SCALE);
     }
@@ -104,6 +132,7 @@ public class FactoryPort extends Building {
         externalTransferUsed = false;
         externalConnected = false;
         gatewayCursor = 0;
+        for (int i = 0; i < laneFilters.length; i++) laneFilters[i] = null;
     }
 
     @Override
@@ -141,6 +170,5 @@ public class FactoryPort extends Building {
         g2.dispose();
     }
 
-    @Override
-    public void update() { }
+    @Override public void update() { }
 }
