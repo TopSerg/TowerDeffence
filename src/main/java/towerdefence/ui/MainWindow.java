@@ -13,7 +13,7 @@ public class MainWindow extends JFrame {
 
         GameMap map = new GameMap(20, 20);
         GameState state = new GameState(map);
-        GamePanel panel = new GamePanel(map, state);
+        GamePanel panel = new WorkshopGamePanel(map, state);
 
         setLayout(new BorderLayout());
         add(panel, BorderLayout.CENTER);

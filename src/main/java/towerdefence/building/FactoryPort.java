@@ -4,6 +4,8 @@ import towerdefence.world.Direction;
 import towerdefence.world.Tile;
 
 import java.awt.*;
+import java.util.Collections;
+import java.util.List;
 
 /** Пристройка 1x1 к Workshop. Создаёт внутренний gateway на соответствующей стороне. */
 public class FactoryPort extends Building {
@@ -23,10 +25,15 @@ public class FactoryPort extends Building {
 
     public boolean attachTo(Workshop workshop, Direction side) {
         if (workshop == null || side == null) return false;
+        if (this.workshop != null && this.workshop != workshop) this.workshop.unregisterPort(this);
         this.workshop = workshop;
         this.attachedSide = side;
         workshop.registerPort(this);
         return true;
+    }
+
+    public List<Point> getGatewayCells() {
+        return workshop == null ? Collections.emptyList() : workshop.getGatewayCells(this);
     }
 
     public void detach() {

@@ -12,11 +12,13 @@ import java.util.List;
 public class Workshop extends Building {
     public static final int WIDTH_TILES = 3;
     public static final int HEIGHT_TILES = 3;
+    public static final int INTERIOR_SCALE = 3;
     public static final int INTERIOR_SIZE = 9;
     public static final int MAX_HEALTH = 900;
 
     private final int[][] sectorDamage = new int[3][3];
     private final List<FactoryPort> ports = new ArrayList<>();
+    private final WorkshopInterior interior = new WorkshopInterior(INTERIOR_SIZE, INTERIOR_SIZE);
 
     public Workshop(Tile position) {
         super(MAX_HEALTH, 0, position, new Color(98, 108, 140));
@@ -29,8 +31,9 @@ public class Workshop extends Building {
     @Override
     public int getFootprintHeight() { return HEIGHT_TILES; }
 
-    public int getInteriorWidth() { return INTERIOR_SIZE; }
-    public int getInteriorHeight() { return INTERIOR_SIZE; }
+    public int getInteriorWidth() { return interior.getWidth(); }
+    public int getInteriorHeight() { return interior.getHeight(); }
+    public WorkshopInterior getInterior() { return interior; }
 
     public boolean containsWorldTile(Tile tile) {
         if (tile == null || position == null) return false;
@@ -47,7 +50,14 @@ public class Workshop extends Building {
     }
 
     public void registerPort(FactoryPort port) {
-        if (port != null && !ports.contains(port)) ports.add(port);
+        if (port == null || ports.contains(port)) return;
+        ports.add(port);
+        // Gateway является частью оболочки Workshop и имеет приоритет над временной
+        // внутренней раскладкой. Внутренние конвейеры пока бесплатные/технические,
+        // поэтому при достройке нового порта освобождаем его три граничные клетки.
+        for (Point cell : getGatewayCells(port)) {
+            interior.removeConveyor(cell.x, cell.y);
+        }
     }
 
     public void unregisterPort(FactoryPort port) { ports.remove(port); }
@@ -64,6 +74,58 @@ public class Workshop extends Building {
         List<FactoryPort> result = new ArrayList<>();
         for (FactoryPort port : ports) if (!port.isInput()) result.add(port);
         return result;
+    }
+
+    /**
+     * Возвращает три внутренние граничные клетки, соответствующие конкретной внешней клетке порта.
+     * Так сохраняется общее правило масштаба: 1 внешняя клетка = 3 внутренних клетки вдоль стены.
+     */
+    public List<Point> getGatewayCells(FactoryPort port) {
+        if (port == null || port.getWorkshop() != this || port.getAttachedSide() == null
+                || port.getPosition() == null || position == null) return Collections.emptyList();
+
+        Direction side = port.getAttachedSide();
+        int slot;
+        if (side == Direction.UP || side == Direction.DOWN) {
+            slot = port.getPosition().getX() - position.getX();
+        } else {
+            slot = port.getPosition().getY() - position.getY();
+        }
+        if (slot < 0 || slot >= 3) return Collections.emptyList();
+
+        List<Point> cells = new ArrayList<>(INTERIOR_SCALE);
+        for (int i = 0; i < INTERIOR_SCALE; i++) {
+            int offset = slot * INTERIOR_SCALE + i;
+            switch (side) {
+                case UP: cells.add(new Point(offset, 0)); break;
+                case DOWN: cells.add(new Point(offset, INTERIOR_SIZE - 1)); break;
+                case LEFT: cells.add(new Point(0, offset)); break;
+                case RIGHT: cells.add(new Point(INTERIOR_SIZE - 1, offset)); break;
+            }
+        }
+        return Collections.unmodifiableList(cells);
+    }
+
+    public boolean isGatewayCell(int x, int y) {
+        for (FactoryPort port : ports) {
+            for (Point cell : getGatewayCells(port)) {
+                if (cell.x == x && cell.y == y) return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean placeInteriorConveyor(int x, int y, Direction direction) {
+        if (isGatewayCell(x, y)) return false;
+        return interior.placeConveyor(x, y, direction);
+    }
+
+    public boolean removeInteriorConveyor(int x, int y) {
+        return interior.removeConveyor(x, y);
+    }
+
+    public InteriorConveyor getInteriorConveyor(int x, int y) {
+        return interior.getConveyor(x, y);
     }
 
     public void markSectorDamaged(Direction side, int amount) {
