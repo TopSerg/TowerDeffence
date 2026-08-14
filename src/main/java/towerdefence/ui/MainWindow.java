@@ -1,6 +1,7 @@
 package towerdefence.ui;
 
 import towerdefence.game.GameState;
+import towerdefence.game.WorkshopGameState;
 import towerdefence.world.GameMap;
 
 import javax.swing.*;
@@ -12,7 +13,7 @@ public class MainWindow extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         GameMap map = new GameMap(20, 20);
-        GameState state = new GameState(map);
+        GameState state = new WorkshopGameState(map);
         GamePanel panel = new WorkshopGamePanel(map, state);
 
         setLayout(new BorderLayout());

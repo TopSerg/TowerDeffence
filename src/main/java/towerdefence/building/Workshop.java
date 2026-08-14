@@ -1,5 +1,6 @@
 package towerdefence.building;
 
+import towerdefence.resource.ResourceType;
 import towerdefence.world.Direction;
 import towerdefence.world.Tile;
 
@@ -19,6 +20,7 @@ public class Workshop extends Building {
     private final int[][] sectorDamage = new int[3][3];
     private final List<FactoryPort> ports = new ArrayList<>();
     private final WorkshopInterior interior = new WorkshopInterior(INTERIOR_SIZE, INTERIOR_SIZE);
+    private final List<WorkshopItem> interiorItems = new ArrayList<>();
 
     public Workshop(Tile position) {
         super(MAX_HEALTH, 0, position, new Color(98, 108, 140));
@@ -34,6 +36,14 @@ public class Workshop extends Building {
     public int getInteriorWidth() { return interior.getWidth(); }
     public int getInteriorHeight() { return interior.getHeight(); }
     public WorkshopInterior getInterior() { return interior; }
+    public List<WorkshopItem> getInteriorItems() { return Collections.unmodifiableList(interiorItems); }
+
+    public WorkshopItem getInteriorItemAt(int x, int y) {
+        for (WorkshopItem item : interiorItems) {
+            if (item.getX() == x && item.getY() == y) return item;
+        }
+        return null;
+    }
 
     public boolean containsWorldTile(Tile tile) {
         if (tile == null || position == null) return false;
@@ -116,7 +126,7 @@ public class Workshop extends Building {
     }
 
     public boolean placeInteriorConveyor(int x, int y, Direction direction) {
-        if (isGatewayCell(x, y)) return false;
+        if (isGatewayCell(x, y) || getInteriorItemAt(x, y) != null) return false;
         return interior.placeConveyor(x, y, direction);
     }
 
@@ -126,6 +136,94 @@ public class Workshop extends Building {
 
     public InteriorConveyor getInteriorConveyor(int x, int y) {
         return interior.getConveyor(x, y);
+    }
+
+    /**
+     * Один внутренний логистический такт. Каждый предмет проходит максимум одну клетку,
+     * а новые предметы из INPUT Gateway только появляются на граничной клетке.
+     */
+    public void advanceInteriorTransport() {
+        for (WorkshopItem item : new ArrayList<>(interiorItems)) moveInteriorItem(item);
+        for (FactoryPort input : getInputPorts()) injectInputItem(input);
+    }
+
+    private void moveInteriorItem(WorkshopItem item) {
+        if (item == null || !interiorItems.contains(item)) return;
+
+        if (item.getEntrySide() != null) {
+            Direction inward = opposite(item.getEntrySide());
+            int nx = item.getX() + inward.getDx();
+            int ny = item.getY() + inward.getDy();
+            if (interior.getConveyor(nx, ny) != null && getInteriorItemAt(nx, ny) == null) {
+                item.moveTo(nx, ny);
+                item.leaveGateway();
+            }
+            return;
+        }
+
+        InteriorConveyor conveyor = interior.getConveyor(item.getX(), item.getY());
+        if (conveyor == null) return;
+        Direction direction = conveyor.getDirection();
+        int nx = item.getX() + direction.getDx();
+        int ny = item.getY() + direction.getDy();
+        if (!interior.contains(nx, ny)) return;
+
+        FactoryPort output = findOutputPort(nx, ny, direction);
+        if (output != null) {
+            if (output.offerInteriorOutput(item.getType())) interiorItems.remove(item);
+            return;
+        }
+
+        if (isGatewayCell(nx, ny)) return;
+        if (interior.getConveyor(nx, ny) != null && getInteriorItemAt(nx, ny) == null) {
+            item.moveTo(nx, ny);
+        }
+    }
+
+    private void injectInputItem(FactoryPort input) {
+        if (input == null || !input.isInput() || input.getAttachedSide() == null) return;
+        ResourceType type = input.peekInputResource();
+        if (type == null) return;
+        List<Point> cells = getGatewayCells(input);
+        if (cells.isEmpty()) return;
+
+        int start = input.getGatewayCursor();
+        Direction inward = opposite(input.getAttachedSide());
+        for (int attempt = 0; attempt < cells.size(); attempt++) {
+            int lane = (start + attempt) % cells.size();
+            Point gateway = cells.get(lane);
+            int nextX = gateway.x + inward.getDx();
+            int nextY = gateway.y + inward.getDy();
+            if (getInteriorItemAt(gateway.x, gateway.y) != null) continue;
+            if (interior.getConveyor(nextX, nextY) == null) continue;
+
+            ResourceType committed = input.commitInputToInterior();
+            if (committed == null) return;
+            interiorItems.add(new WorkshopItem(committed, gateway.x, gateway.y, input.getAttachedSide()));
+            input.setGatewayCursor(lane + 1);
+            return;
+        }
+    }
+
+    private FactoryPort findOutputPort(int x, int y, Direction travelDirection) {
+        for (FactoryPort port : getOutputPorts()) {
+            if (port.getAttachedSide() != travelDirection) continue;
+            for (Point gateway : getGatewayCells(port)) {
+                if (gateway.x == x && gateway.y == y) return port;
+            }
+        }
+        return null;
+    }
+
+    private Direction opposite(Direction direction) {
+        if (direction == null) return Direction.RIGHT;
+        switch (direction) {
+            case UP: return Direction.DOWN;
+            case DOWN: return Direction.UP;
+            case LEFT: return Direction.RIGHT;
+            case RIGHT: return Direction.LEFT;
+            default: return Direction.RIGHT;
+        }
     }
 
     public void markSectorDamaged(Direction side, int amount) {
@@ -181,7 +279,7 @@ public class Workshop extends Building {
         g2.drawString("Workshop", x + 10, y + 18);
         g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, Math.max(9, tileSize / 4)));
         g2.drawString("3x3 → 9x9", x + 10, y + 33);
-        g2.drawString("Ports: " + ports.size(), x + 10, y + h - 12);
+        g2.drawString("Ports: " + ports.size() + " · items: " + interiorItems.size(), x + 10, y + h - 12);
 
         int barWidth = w - 12;
         int healthWidth = Math.max(0, barWidth * health / MAX_HEALTH);
