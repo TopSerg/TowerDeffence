@@ -30,6 +30,8 @@ public class GameMap {
                     resource = new Resource(ResourceType.METAL, 180 + (int) (Math.random() * 221));
                 } else if (roll < 0.115) {
                     resource = new Resource(ResourceType.COAL, 140 + (int) (Math.random() * 181));
+                } else if (roll < 0.132) {
+                    resource = new Resource(ResourceType.OIL, 180 + (int) (Math.random() * 221));
                 }
                 tiles[x][y] = new Tile(x, y, type, resource, null, true);
             }
@@ -44,7 +46,6 @@ public class GameMap {
             makeWater(tiles[width - 1][y]);
         }
 
-        // Стартовая конфигурация не меняется.
         clearResource(5, 5);
         clearResource(6, 5);
         clearResource(7, 5);
@@ -52,9 +53,10 @@ public class GameMap {
         clearResource(6, 6);
         clearResource(2, 3);
 
-        // Гарантированные залежи нужны, чтобы автономный рабочий всегда мог начать добычу.
         ensureDeposit(4, 8, ResourceType.METAL, 300);
         ensureDeposit(9, 7, ResourceType.COAL, 240);
+        // Fluid infrastructure needs a deterministic first oil field just like early solid resources.
+        ensureDeposit(14, 10, ResourceType.OIL, 320);
     }
 
     private void ensureDeposit(int x, int y, ResourceType type, int amount) {
