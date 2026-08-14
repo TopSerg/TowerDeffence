@@ -89,7 +89,9 @@ public class Unit extends Entity {
 
     protected void updateMovement() {
         if (intermediateTarget == null) return;
-        if ((!intermediateTarget.isPassable() || intermediateTarget.hasBuilding())
+        boolean blockingBuilding = intermediateTarget.hasBuilding()
+                && intermediateTarget.getBuilding().blocksMovement();
+        if ((!intermediateTarget.isPassable() || blockingBuilding)
                 && intermediateTarget != targetTile) {
             recalculatePath();
             return;
