@@ -8,20 +8,28 @@ import towerdefence.roadmap.RoadmapRuntime;
 import towerdefence.world.GameMap;
 import towerdefence.world.Tile;
 
+import java.awt.Point;
+import java.util.List;
+
 /** GameState экспериментальной реализации всего текущего roadmap. */
 public class RoadmapGameState extends WorkshopGameState {
     private final RoadmapRuntime roadmap;
     private final RoadmapFlowController flow;
+    private final InternalBuilderController internalBuilders;
 
     public RoadmapGameState(GameMap map) {
         super(map);
         roadmap = new RoadmapRuntime(this, map);
         roadmap.bootstrap();
         flow = new RoadmapFlowController(this, roadmap);
+        internalBuilders = new InternalBuilderController(roadmap);
     }
 
     public RoadmapRuntime getRoadmap() { return roadmap; }
     public Workshop getRequestedWorkshop() { return flow.getRequestedWorkshop(); }
+    public List<Point> getInternalBuilderPositions(Workshop workshop) {
+        return internalBuilders.getPositions(workshop);
+    }
 
     /** Вася больше не забирает строительные задачи у Construction Rover. */
     @Override
@@ -42,6 +50,7 @@ public class RoadmapGameState extends WorkshopGameState {
         if (getStatus() == GameStatus.RUNNING) {
             flow.beforeRuntimeUpdate();
             roadmap.update();
+            internalBuilders.afterRuntimeUpdate();
             flow.afterRuntimeUpdate();
         }
     }
@@ -50,6 +59,7 @@ public class RoadmapGameState extends WorkshopGameState {
     public void restart() {
         super.restart();
         if (roadmap != null) roadmap.resetAfterStateRestart();
+        if (internalBuilders != null) internalBuilders.reset();
     }
 
     @Override

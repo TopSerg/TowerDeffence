@@ -10,6 +10,8 @@ import towerdefence.world.GameMap;
 import towerdefence.world.Tile;
 import towerdefence.world.TileType;
 
+import java.awt.Point;
+
 public class RoadmapMegaFeatureTest {
     private static void check(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
@@ -77,6 +79,35 @@ public class RoadmapMegaFeatureTest {
         check(runtime.getVasyaInsideWorkshop() == sideEntryWorkshop,
                 "Vasya must enter Workshop from any adjacent footprint side");
         runtime.requestExitWorkshop(sideEntryWorkshop);
+
+        runtime.getVasya().move(rightSide);
+        runtime.requestEnterWorkshop(sideEntryWorkshop);
+        state.update();
+        check(runtime.getVasyaInsideWorkshop() == sideEntryWorkshop,
+                "Vasya must be inside before interior marking starts");
+        check(state.getInternalBuilderPositions(sideEntryWorkshop).size() == 1,
+                "Workshop must expose one physical starting internal builder");
+        Point botStart = state.getInternalBuilderPositions(sideEntryWorkshop).get(0);
+
+        check(runtime.queueInteriorConveyor(sideEntryWorkshop, 8, 8, Direction.LEFT),
+                "Interior conveyor blueprint was not queued");
+        RoadmapRuntime.InteriorBuildTask interiorTask = runtime.getFactoryState(sideEntryWorkshop).getTasks().get(0);
+        for (int i = 0; i < 30; i++) state.update();
+
+        Point botAfterMarking = state.getInternalBuilderPositions(sideEntryWorkshop).get(0);
+        check(!botAfterMarking.equals(botStart),
+                "Internal builder must physically move toward the marked blueprint");
+        check(interiorTask.getPhase() == RoadmapRuntime.BlueprintPhase.WAITING_FOR_RESOURCES,
+                "Construction timer must wait while the internal builder is still travelling");
+        check(sideEntryWorkshop.getInteriorConveyor(8, 8) == null,
+                "Interior conveyor must not appear before the builder arrives");
+
+        int safety = 220;
+        while (interiorTask.getPhase() != RoadmapRuntime.BlueprintPhase.DONE && safety-- > 0) state.update();
+        check(interiorTask.getPhase() == RoadmapRuntime.BlueprintPhase.DONE,
+                "Internal builder did not finish the physical construction task");
+        check(sideEntryWorkshop.getInteriorConveyor(8, 8) != null,
+                "Finished physical builder task must place the conveyor");
 
         check(runtime.toggleWire(10, 10) && runtime.hasWire(10, 10), "Power layer is not editable");
         check(runtime.togglePipe(11, 10) && runtime.hasPipe(11, 10), "Fluid layer is not editable");

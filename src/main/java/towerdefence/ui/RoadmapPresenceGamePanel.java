@@ -7,6 +7,7 @@ import towerdefence.world.GameMap;
 
 import java.awt.*;
 import java.lang.reflect.Field;
+import java.util.List;
 
 /** Добавляет явное присутствие стартового внутреннего строителя и Васи в interior-view. */
 public class RoadmapPresenceGamePanel extends RoadmapGamePanel {
@@ -29,7 +30,7 @@ public class RoadmapPresenceGamePanel extends RoadmapGamePanel {
         Graphics2D g2 = (Graphics2D) g.create();
         Rectangle bounds = interiorBounds();
         int cell = bounds.width / 9;
-        drawBuilderBots(g2, bounds, cell, Math.max(1, factory.getInternalBots()));
+        drawBuilderBots(g2, bounds, cell, state.getInternalBuilderPositions(viewed));
         if (state.getRoadmap().getVasyaInsideWorkshop() == viewed) {
             drawVasya(g2, bounds, cell);
         } else if (state.getRequestedWorkshop() == viewed) {
@@ -40,11 +41,10 @@ public class RoadmapPresenceGamePanel extends RoadmapGamePanel {
         g2.dispose();
     }
 
-    private void drawBuilderBots(Graphics2D g2, Rectangle bounds, int cell, int count) {
-        int visible = Math.min(count, 4);
-        for (int i = 0; i < visible; i++) {
-            int px = bounds.x + (3 + i) * cell;
-            int py = bounds.y + 4 * cell;
+    private void drawBuilderBots(Graphics2D g2, Rectangle bounds, int cell, List<Point> bots) {
+        for (Point bot : bots) {
+            int px = bounds.x + bot.x * cell;
+            int py = bounds.y + bot.y * cell;
             int size = Math.max(12, cell / 2);
             int x = px + (cell - size) / 2;
             int y = py + (cell - size) / 2;
