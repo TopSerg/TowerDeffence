@@ -34,11 +34,17 @@ jobs:
           set -euo pipefail
           javac -encoding UTF-8 -cp out -d out $(find src/test/java -name '*.java' | sort)
 
-      - name: Run all headless game tests
+      - name: Run physical internal builder regression
         shell: bash
         run: |
           set -euo pipefail
-          for file in $(find src/test/java/towerdefence -maxdepth 1 -name '*Test.java' | sort); do
+          java -Djava.awt.headless=true -cp out towerdefence.InternalBuilderFlowTest
+
+      - name: Run remaining headless game tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in $(find src/test/java/towerdefence -maxdepth 1 -name '*Test.java' ! -name 'InternalBuilderFlowTest.java' | sort); do
             test_class="$(basename "$file" .java)"
             echo "::group::$test_class"
             java -Djava.awt.headless=true -cp out "towerdefence.$test_class"
