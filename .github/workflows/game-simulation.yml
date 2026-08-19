@@ -1,0 +1,46 @@
+name: Game simulation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  headless-game-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile game
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          javac -encoding UTF-8 -d out $(find src/main/java -name '*.java' | sort)
+
+      - name: Compile tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          javac -encoding UTF-8 -cp out -d out $(find src/test/java -name '*.java' | sort)
+
+      - name: Run all headless game tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in $(find src/test/java/towerdefence -maxdepth 1 -name '*Test.java' | sort); do
+            test_class="$(basename "$file" .java)"
+            echo "::group::$test_class"
+            java -Djava.awt.headless=true -cp out "towerdefence.$test_class"
+            echo "::endgroup::"
+          done
