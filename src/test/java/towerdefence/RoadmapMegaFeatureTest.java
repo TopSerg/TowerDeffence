@@ -63,6 +63,21 @@ public class RoadmapMegaFeatureTest {
         check(runtime.getVasyaRover() != null, "Vasya rover was not bootstrapped");
         check(runtime.getConstructionRovers().size() == 1, "Initial Construction Rover missing");
         check(runtime.getCombatRobots().isEmpty(), "Combat robots should be produced/deployed later");
+
+        for (int y = 15; y <= 17; y++) for (int x = 20; x <= 22; x++) map.getTile(x, y).setResource(null);
+        Tile workshopOrigin = map.getTile(20, 15);
+        Workshop sideEntryWorkshop = new Workshop(workshopOrigin);
+        check(state.addBuilding(sideEntryWorkshop, workshopOrigin), "Regression Workshop was not added");
+        runtime.update();
+        Tile rightSide = map.getTile(23, 16);
+        rightSide.setResource(null);
+        runtime.getVasya().move(rightSide);
+        runtime.requestEnterWorkshop(sideEntryWorkshop);
+        runtime.update();
+        check(runtime.getVasyaInsideWorkshop() == sideEntryWorkshop,
+                "Vasya must enter Workshop from any adjacent footprint side");
+        runtime.requestExitWorkshop(sideEntryWorkshop);
+
         check(runtime.toggleWire(10, 10) && runtime.hasWire(10, 10), "Power layer is not editable");
         check(runtime.togglePipe(11, 10) && runtime.hasPipe(11, 10), "Fluid layer is not editable");
         check(runtime.getExploredPercent() > 0 && runtime.getExploredPercent() < 100,
