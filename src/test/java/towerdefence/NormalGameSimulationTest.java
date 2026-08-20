@@ -70,16 +70,38 @@ public class NormalGameSimulationTest {
         for (int y = 2; y <= 12; y++) {
             for (int x = 4; x <= 16; x++) {
                 Tile tile = map.getTile(x, y);
-                if (tile == null || tile.hasBuilding() || tile.hasUnit()) continue;
+                if (tile == null) continue;
+
+                // Ресурсы очищаем даже под временно стоящими юнитами. Иначе юнит
+                // позже уедет, залежь останется, и следующий чертёж случайно попадёт на неё.
+                tile.setResource(null);
+
+                if (tile.hasBuilding() || tile.hasUnit()) continue;
                 tile.setType(TileType.DIRT);
                 tile.setPassable(true);
-                tile.setResource(null);
             }
         }
     }
 
-    private static Building build(RoadmapGameState state, BuildableType type,
+    private static void clearBuildFootprint(GameMap map, BuildableType type, Tile origin) {
+        if (type == BuildableType.DRILL) return;
+        for (int dy = 0; dy < type.getFootprintHeight(); dy++) {
+            for (int dx = 0; dx < type.getFootprintWidth(); dx++) {
+                Tile footprintTile = map.getTile(origin.getX() + dx, origin.getY() + dy);
+                check(footprintTile != null,
+                        "Тест пытается строить " + type + " за пределами карты from "
+                                + origin.getX() + "," + origin.getY());
+                footprintTile.setResource(null);
+                check(!footprintTile.hasResource(),
+                        "Не удалось очистить ресурс под чертёж " + type + " at "
+                                + footprintTile.getX() + "," + footprintTile.getY());
+            }
+        }
+    }
+
+    private static Building build(RoadmapGameState state, GameMap map, BuildableType type,
                                   Tile tile, Direction direction) {
+        clearBuildFootprint(map, type, tile);
         check(state.placeBuilding(type, tile, direction),
                 "Не удалось поставить чертёж " + type + " at " + tile.getX() + "," + tile.getY()
                         + ": " + state.getBuildFailureReason(type, tile));
@@ -150,19 +172,19 @@ public class NormalGameSimulationTest {
         coalDeposit.setResource(new Resource(ResourceType.COAL, 1_000));
 
         // 1. Реально строим две бурилки.
-        Drill metalDrill = (Drill) build(state, BuildableType.DRILL, metalDeposit, Direction.LEFT);
-        Drill coalDrill = (Drill) build(state, BuildableType.DRILL, coalDeposit, Direction.LEFT);
+        Drill metalDrill = (Drill) build(state, map, BuildableType.DRILL, metalDeposit, Direction.LEFT);
+        Drill coalDrill = (Drill) build(state, map, BuildableType.DRILL, coalDeposit, Direction.LEFT);
 
         // 2. Реально строим две линии добычи к общему складу.
-        build(state, BuildableType.CONVEYOR, map.getTile(10, 5), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(9, 5), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(8, 5), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(7, 5), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(10, 5), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(9, 5), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(8, 5), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(7, 5), Direction.LEFT);
 
-        build(state, BuildableType.CONVEYOR, map.getTile(10, 6), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(9, 6), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(8, 6), Direction.LEFT);
-        build(state, BuildableType.CONVEYOR, map.getTile(7, 6), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(10, 6), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(9, 6), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(8, 6), Direction.LEFT);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(7, 6), Direction.UP);
 
         int metalBeforeMining = state.getInventory().getAmount(ResourceType.METAL);
         int coalBeforeMining = state.getInventory().getAmount(ResourceType.COAL);
@@ -176,9 +198,9 @@ public class NormalGameSimulationTest {
         check(coalDrill.getRemainingDeposit() < 1_000, "Coal Drill ничего не добыл");
 
         // 3. Строим пулемётную башню, подаём в неё патроны и проверяем реальный бой.
-        CombatTower tower = (CombatTower) build(state, BuildableType.MACHINE_GUN_TOWER,
+        CombatTower tower = (CombatTower) build(state, map, BuildableType.MACHINE_GUN_TOWER,
                 map.getTile(6, 3), Direction.UP);
-        build(state, BuildableType.CONVEYOR, map.getTile(6, 4), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 4), Direction.UP);
         int baseAmmoBeforeSupply = state.getMainBuilding().getAmmoStock();
         runUntil(state, 1_500,
                 () -> tower.isSupplied() && tower.getAmmo() >= 8,
@@ -193,15 +215,15 @@ public class NormalGameSimulationTest {
                 "Построенная и снабжённая башня не уничтожила противника");
 
         // 4. Строим Workshop через тот же реальный Construction Rover.
-        Workshop workshop = (Workshop) build(state, BuildableType.WORKSHOP,
+        Workshop workshop = (Workshop) build(state, map, BuildableType.WORKSHOP,
                 map.getTile(8, 8), Direction.RIGHT);
         runUntil(state, 300,
                 () -> state.getRoadmap().getFactoryState(workshop) != null,
                 "RoadmapRuntime не зарегистрировал построенный Workshop");
 
-        FactoryPort input = (FactoryPort) build(state, BuildableType.FACTORY_INPUT_PORT,
+        FactoryPort input = (FactoryPort) build(state, map, BuildableType.FACTORY_INPUT_PORT,
                 map.getTile(11, 9), Direction.LEFT);
-        FactoryPort output = (FactoryPort) build(state, BuildableType.FACTORY_OUTPUT_PORT,
+        FactoryPort output = (FactoryPort) build(state, map, BuildableType.FACTORY_OUTPUT_PORT,
                 map.getTile(7, 9), Direction.LEFT);
         check(input.getWorkshop() == workshop && output.getWorkshop() == workshop,
                 "INPUT/OUTPUT ports не привязались к Workshop");
@@ -211,14 +233,14 @@ public class NormalGameSimulationTest {
         removeConveyor(state, map.getTile(9, 6));
         removeConveyor(state, map.getTile(8, 6));
         removeConveyor(state, map.getTile(7, 6));
-        build(state, BuildableType.CONVEYOR, map.getTile(11, 7), Direction.DOWN);
-        build(state, BuildableType.CONVEYOR, map.getTile(11, 8), Direction.DOWN);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(11, 7), Direction.DOWN);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(11, 8), Direction.DOWN);
 
         // OUTPUT Gateway возвращает поток в главный склад.
-        build(state, BuildableType.CONVEYOR, map.getTile(6, 9), Direction.UP);
-        build(state, BuildableType.CONVEYOR, map.getTile(6, 8), Direction.UP);
-        build(state, BuildableType.CONVEYOR, map.getTile(6, 7), Direction.UP);
-        build(state, BuildableType.CONVEYOR, map.getTile(6, 6), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 9), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 8), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 7), Direction.UP);
+        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 6), Direction.UP);
 
         // 6. Вася физически входит внутрь, а внутренний робот строит линию 9x9.
         state.getRoadmap().requestEnterWorkshop(workshop);
