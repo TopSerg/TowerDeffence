@@ -121,6 +121,59 @@ public class NormalGameSimulationTest {
                 "Не удалось демонтировать conveyor at " + tile.getX() + "," + tile.getY());
     }
 
+    private static CombatLane findFreeCombatLane(RoadmapGameState state, GameMap map) {
+        Tile base = state.getMainBuilding().getPosition();
+        check(base != null, "Главная база не имеет позиции");
+
+        Direction[] directions = {Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT};
+        int[][] offsets = {
+                {0, -1, 0, -2},
+                {0, 1, 0, 2},
+                {-1, 0, -2, 0},
+                {1, 0, 2, 0}
+        };
+
+        for (int i = 0; i < directions.length; i++) {
+            Tile conveyorTile = map.getTile(base.getX() + offsets[i][0], base.getY() + offsets[i][1]);
+            Tile towerTile = map.getTile(base.getX() + offsets[i][2], base.getY() + offsets[i][3]);
+            if (conveyorTile == null || towerTile == null) continue;
+
+            clearBuildFootprint(map, BuildableType.CONVEYOR, conveyorTile);
+            clearBuildFootprint(map, BuildableType.MACHINE_GUN_TOWER, towerTile);
+
+            if (state.canPlaceBuilding(BuildableType.CONVEYOR, conveyorTile)
+                    && state.canPlaceBuilding(BuildableType.MACHINE_GUN_TOWER, towerTile)) {
+                return new CombatLane(conveyorTile, towerTile, directions[i]);
+            }
+        }
+
+        throw new AssertionError("Нет свободного двухклеточного коридора от базы для боевого smoke-test");
+    }
+
+    private static CombatLane buildCombatLane(RoadmapGameState state, GameMap map) {
+        CombatLane lane = findFreeCombatLane(state, map);
+
+        // Оба чертежа ставим до первого update(). Так Construction Rover не сможет
+        // закончить первый объект и припарковаться на клетке, где должен стоять второй.
+        check(state.placeBuilding(BuildableType.CONVEYOR, lane.conveyorTile, lane.direction),
+                "Не удалось поставить боевой conveyor at "
+                        + lane.conveyorTile.getX() + "," + lane.conveyorTile.getY()
+                        + ": " + state.getBuildFailureReason(BuildableType.CONVEYOR, lane.conveyorTile));
+        check(state.placeBuilding(BuildableType.MACHINE_GUN_TOWER, lane.towerTile, lane.direction),
+                "Не удалось поставить боевую башню at "
+                        + lane.towerTile.getX() + "," + lane.towerTile.getY()
+                        + ": " + state.getBuildFailureReason(BuildableType.MACHINE_GUN_TOWER, lane.towerTile));
+
+        runUntil(state, BUILD_TIMEOUT,
+                () -> lane.conveyorTile.getBuilding() instanceof Conveyor
+                        && lane.towerTile.getBuilding() instanceof CombatTower,
+                "Construction Rover не завершил боевой conveyor + tower");
+
+        lane.conveyor = (Conveyor) lane.conveyorTile.getBuilding();
+        lane.tower = (CombatTower) lane.towerTile.getBuilding();
+        return lane;
+    }
+
     private static void buildInteriorLane(RoadmapGameState state, Workshop workshop, int y) {
         RoadmapRuntime runtime = state.getRoadmap();
         RoadmapRuntime.FactoryState factory = runtime.getFactoryState(workshop);
@@ -197,10 +250,9 @@ public class NormalGameSimulationTest {
         check(metalDrill.getRemainingDeposit() < 1_000, "Metal Drill ничего не добыл");
         check(coalDrill.getRemainingDeposit() < 1_000, "Coal Drill ничего не добыл");
 
-        // 3. Строим пулемётную башню, подаём в неё патроны и проверяем реальный бой.
-        CombatTower tower = (CombatTower) build(state, map, BuildableType.MACHINE_GUN_TOWER,
-                map.getTile(6, 3), Direction.UP);
-        build(state, map, BuildableType.CONVEYOR, map.getTile(6, 4), Direction.UP);
+        // 3. Строим связку conveyor + tower двумя одновременными чертежами.
+        CombatLane combatLane = buildCombatLane(state, map);
+        CombatTower tower = combatLane.tower;
         int baseAmmoBeforeSupply = state.getMainBuilding().getAmmoStock();
         runUntil(state, 1_500,
                 () -> tower.isSupplied() && tower.getAmmo() >= 8,
@@ -213,6 +265,10 @@ public class NormalGameSimulationTest {
         int combatTicks = runUntil(state, 2_000,
                 () -> state.getDestroyedEnemies() > killsBefore,
                 "Построенная и снабжённая башня не уничтожила противника");
+
+        // Боевой стенд временный: освобождаем выбранную сторону базы для следующих этапов.
+        check(state.removeBuilding(combatLane.tower), "Не удалось демонтировать тестовую башню");
+        check(state.removeBuilding(combatLane.conveyor), "Не удалось демонтировать тестовый conveyor башни");
 
         // 4. Строим Workshop через тот же реальный Construction Rover.
         Workshop workshop = (Workshop) build(state, map, BuildableType.WORKSHOP,
@@ -285,5 +341,19 @@ public class NormalGameSimulationTest {
                 + ", metal=" + state.getInventory().getAmount(ResourceType.METAL)
                 + ", coal=" + state.getInventory().getAmount(ResourceType.COAL)
                 + ", factoryDelivered=" + (baseCoalAfterFactory - baseCoalBeforeFactory));
+    }
+
+    private static final class CombatLane {
+        private final Tile conveyorTile;
+        private final Tile towerTile;
+        private final Direction direction;
+        private Conveyor conveyor;
+        private CombatTower tower;
+
+        private CombatLane(Tile conveyorTile, Tile towerTile, Direction direction) {
+            this.conveyorTile = conveyorTile;
+            this.towerTile = towerTile;
+            this.direction = direction;
+        }
     }
 }
